@@ -1,5 +1,15 @@
 flask>=3.0.0
+gunicorn>=21.2.0
+psycopg2-binary>=2.9.9
 PyJWT>=2.7.0
 cryptography>=41.0.0
 numpy>=1.24.0
 Pillow>=10.0.0
+
+# Optional — set COHERE_API_KEY on Railway to use these instead of local ML models.
+# Comment out the heavy ones below to keep your Railway image small.
+sentence-transformers>=2.5.0
+transformers>=4.36.0
+torch>=2.1.0
+pytesseract>=0.3.10
+cohere>=5.0.0

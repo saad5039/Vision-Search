@@ -1,5 +1,5 @@
 """
-Vision Search v4.1 — Production Build
+Vision Search v4.1 — Production Build (PostgreSQL)
 • Sentence Transformers (all-MiniLM-L6-v2) — 384-d semantic embeddings
 • BLIP — real AI image captioning
 • Tesseract OCR — document text extraction
@@ -8,12 +8,16 @@ Vision Search v4.1 — Production Build
 • Rule-based query planner
 """
 
-import os, json, uuid, time, sqlite3, hashlib, secrets, threading, io
+import os, json, uuid, time, hashlib, secrets, threading, io, base64
 from datetime import datetime, timedelta
 from functools import wraps
+from urllib.parse import urlparse
 
 import jwt
 import numpy as np
+import psycopg2
+import psycopg2.extras
+from psycopg2 import pool as pg_pool
 from PIL import Image as PILImage, ExifTags, ImageEnhance, ImageFilter
 from cryptography.fernet import Fernet
 from flask import Flask, request, jsonify, render_template, g, send_from_directory
@@ -72,8 +76,6 @@ else:
     print("  Get free key: cohere.com → set COHERE_API_KEY=your_key")
 
 # ── Query Planner — Rule-based ────────────────────────────────────────────────
-# Gemini API removed: key has allowlist restriction preventing server-side calls.
-# Rule-based planner handles: time ranges, locations, visual concepts, OCR mode.
 GEMINI_AVAILABLE = False
 _gemini_client   = None
 _gemini_model    = None
@@ -93,7 +95,6 @@ except Exception:
     print("ℹ Tesseract not found — OCR disabled")
 
 # ── AI Ready flag ─────────────────────────────────────────────────────────────
-# True only when ST is loaded — guarantees embeddings will be 384-d
 AI_READY = ST_AVAILABLE or COHERE_AVAILABLE
 if AI_READY:
     mode = "Cohere API" if COHERE_AVAILABLE else "Sentence Transformers"
@@ -105,18 +106,25 @@ else:
 
 # ── App setup ─────────────────────────────────────────────────────────────────
 app = Flask(__name__)
-app.secret_key = secrets.token_hex(32)
+app.secret_key = os.environ.get("FLASK_SECRET", secrets.token_hex(32))
 app.config["MAX_CONTENT_LENGTH"] = 500 * 1024 * 1024
 
-ENCRYPTION_KEY = Fernet.generate_key()
-fernet         = Fernet(ENCRYPTION_KEY)
-JWT_SECRET     = secrets.token_hex(32)
-JWT_ALGO       = "HS256"
+# Persistent keys — set these on Railway or any embedding stored in the DB
+# will become un-decryptable after a restart and all sessions will be invalidated.
+_env_fernet = os.environ.get("FERNET_KEY", "").strip()
+if _env_fernet:
+    ENCRYPTION_KEY = _env_fernet.encode()
+else:
+    ENCRYPTION_KEY = Fernet.generate_key()
+    print("⚠ FERNET_KEY not set — generated ephemeral key. Stored embeddings will be lost on restart.")
+    print(f"  Set this on Railway:  FERNET_KEY={ENCRYPTION_KEY.decode()}")
+fernet = Fernet(ENCRYPTION_KEY)
+
+JWT_SECRET = os.environ.get("JWT_SECRET", "").strip() or secrets.token_hex(32)
+JWT_ALGO   = "HS256"
 
 BASE_DIR   = os.path.dirname(os.path.abspath(__file__))
-DB_PATH    = os.path.join(BASE_DIR, "db", "vision_search.db")
-UPLOAD_DIR = os.path.join(BASE_DIR, "static", "uploads")
-os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
+UPLOAD_DIR = os.environ.get("UPLOAD_DIR") or os.path.join(BASE_DIR, "static", "uploads")
 os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 ALLOWED_EXT    = {".jpg",".jpeg",".png",".gif",".webp",".bmp",".tiff",".tif"}
@@ -125,51 +133,121 @@ THUMB_SIZE     = (600, 600)
 
 upload_jobs = {}
 
-# ── Database ──────────────────────────────────────────────────────────────────
+# ── Database (PostgreSQL) ─────────────────────────────────────────────────────
+DATABASE_URL = os.environ.get("DATABASE_URL", "").strip()
+if not DATABASE_URL:
+    raise RuntimeError(
+        "DATABASE_URL is not set. On Railway, add the PostgreSQL plugin and it will "
+        "be injected automatically. Locally, set DATABASE_URL to your Postgres connection string."
+    )
+
+# Railway sometimes uses postgres:// — psycopg2 accepts both, but normalize for safety
+if DATABASE_URL.startswith("postgres://"):
+    DATABASE_URL = "postgresql://" + DATABASE_URL[len("postgres://"):]
+
+_pool = pg_pool.ThreadedConnectionPool(
+    minconn=1,
+    maxconn=int(os.environ.get("DB_POOL_MAX", "10")),
+    dsn=DATABASE_URL,
+)
+
+class _PooledConn:
+    """Thin wrapper exposing the sqlite-style execute/commit API on top of psycopg2."""
+    def __init__(self, raw):
+        self._raw = raw
+    def execute(self, sql, params=()):
+        cur = self._raw.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+        cur.execute(sql, params)
+        return _Cursor(cur)
+    def commit(self):
+        self._raw.commit()
+    def rollback(self):
+        self._raw.rollback()
+    def close(self):
+        _pool.putconn(self._raw)
+
+class _Cursor:
+    """Minimal cursor wrapper so existing .fetchone()/.fetchall() calls keep working."""
+    def __init__(self, cur):
+        self._cur = cur
+    def fetchone(self):
+        try:
+            return self._cur.fetchone()
+        finally:
+            self._cur.close()
+    def fetchall(self):
+        try:
+            return self._cur.fetchall()
+        finally:
+            self._cur.close()
+    def __del__(self):
+        try:
+            if not self._cur.closed:
+                self._cur.close()
+        except Exception:
+            pass
+
+def _checkout():
+    return _PooledConn(_pool.getconn())
+
 def get_db():
     if "db" not in g:
-        conn = sqlite3.connect(DB_PATH, detect_types=sqlite3.PARSE_DECLTYPES)
-        conn.row_factory = sqlite3.Row
-        conn.execute("PRAGMA journal_mode=WAL")
-        conn.execute("PRAGMA synchronous=NORMAL")
-        conn.execute("PRAGMA cache_size=-32000")
-        g.db = conn
+        g.db = _checkout()
     return g.db
 
 @app.teardown_appcontext
 def close_db(e=None):
     db = g.pop("db", None)
-    if db: db.close()
+    if db:
+        try:
+            if e is None:
+                db.commit()
+            else:
+                db.rollback()
+        finally:
+            db.close()
 
 def init_db():
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.executescript("""
-            PRAGMA journal_mode=WAL;
-            CREATE TABLE IF NOT EXISTS users (
-                id TEXT PRIMARY KEY, email TEXT UNIQUE NOT NULL,
-                name TEXT, created_at TEXT DEFAULT (datetime('now'))
-            );
-            CREATE TABLE IF NOT EXISTS image_index (
-                id              TEXT PRIMARY KEY,
-                user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-                source_id       TEXT,
-                embedding_enc   BLOB,
-                caption         TEXT,
-                ocr_text        TEXT,
-                perceptual_hash TEXT,
-                taken_at        TEXT,
-                latitude        REAL, longitude REAL,
-                location_name   TEXT, device_model TEXT,
-                width INTEGER, height INTEGER, file_size INTEGER,
-                thumbnail_url   TEXT,
-                source_type     TEXT DEFAULT 'upload',
-                created_at      TEXT DEFAULT (datetime('now'))
-            );
-            CREATE INDEX IF NOT EXISTS idx_img_user  ON image_index(user_id);
-            CREATE INDEX IF NOT EXISTS idx_img_taken ON image_index(user_id, taken_at);
-            CREATE INDEX IF NOT EXISTS idx_img_phash ON image_index(user_id, perceptual_hash);
-        """)
+    conn = _pool.getconn()
+    try:
+        with conn.cursor() as cur:
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS users (
+                    id          TEXT PRIMARY KEY,
+                    email       TEXT UNIQUE NOT NULL,
+                    name        TEXT,
+                    created_at  TIMESTAMP DEFAULT NOW()
+                );
+            """)
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS image_index (
+                    id              TEXT PRIMARY KEY,
+                    user_id         TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    source_id       TEXT,
+                    embedding_enc   BYTEA,
+                    caption         TEXT,
+                    ocr_text        TEXT,
+                    perceptual_hash TEXT,
+                    taken_at        TIMESTAMP,
+                    latitude        DOUBLE PRECISION,
+                    longitude       DOUBLE PRECISION,
+                    location_name   TEXT,
+                    device_model    TEXT,
+                    width           INTEGER,
+                    height          INTEGER,
+                    file_size       BIGINT,
+                    thumbnail_url   TEXT,
+                    source_type     TEXT DEFAULT 'upload',
+                    created_at      TIMESTAMP DEFAULT NOW()
+                );
+            """)
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_img_user  ON image_index(user_id);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_img_taken ON image_index(user_id, taken_at);")
+            cur.execute("CREATE INDEX IF NOT EXISTS idx_img_phash ON image_index(user_id, perceptual_hash);")
+        conn.commit()
+        print("✓ PostgreSQL schema ready")
+    finally:
+        _pool.putconn(conn)
 
 # ── Auth ──────────────────────────────────────────────────────────────────────
 def make_token(user_id):
@@ -193,7 +271,6 @@ def require_auth(f):
 
 # ── Embedding ─────────────────────────────────────────────────────────────────
 def text_to_embedding(text: str) -> np.ndarray:
-    # Try Cohere first — highest quality embeddings
     if COHERE_AVAILABLE and _cohere_client:
         try:
             resp = _cohere_client.embed(
@@ -207,7 +284,6 @@ def text_to_embedding(text: str) -> np.ndarray:
         except Exception as e:
             print(f"Cohere embed failed: {e} — falling back to ST")
 
-    # Sentence Transformers fallback
     if ST_AVAILABLE:
         try:
             vec = _st_model.encode(text, normalize_embeddings=True)
@@ -215,7 +291,6 @@ def text_to_embedding(text: str) -> np.ndarray:
         except Exception:
             pass
 
-    # Hash-based fallback
     rng = np.random.default_rng(abs(hash(text)) % (2**31))
     vec = rng.random(EMB_DIM).astype(np.float32)
     norm = np.linalg.norm(vec)
@@ -228,7 +303,6 @@ def image_to_embedding(caption: str, filename: str = "") -> np.ndarray:
     name_clean = " ".join(real_words)
     text = (caption + " " + name_clean).strip() if name_clean else caption
 
-    # Use Cohere with search_document input type for indexing
     if COHERE_AVAILABLE and _cohere_client:
         try:
             resp = _cohere_client.embed(
@@ -247,7 +321,10 @@ def image_to_embedding(caption: str, filename: str = "") -> np.ndarray:
 def encrypt_embedding(vec: np.ndarray) -> bytes:
     return fernet.encrypt(json.dumps(vec.tolist()).encode())
 
-def decrypt_embedding(data: bytes) -> np.ndarray:
+def decrypt_embedding(data) -> np.ndarray:
+    # psycopg2 returns BYTEA as memoryview/bytes
+    if isinstance(data, memoryview):
+        data = bytes(data)
     return np.array(json.loads(fernet.decrypt(data).decode()), dtype=np.float32)
 
 # ── BLIP captioning ───────────────────────────────────────────────────────────
@@ -264,7 +341,6 @@ def generate_caption(img: PILImage.Image, filename: str) -> str:
         except Exception as e:
             print(f"BLIP failed: {e}")
 
-    # Fallback caption from filename
     rgb  = img.convert("RGB")
     w, h = rgb.size
     arr  = np.array(rgb.resize((16,16)), dtype=np.float32)
@@ -294,7 +370,6 @@ def batch_cosine_search(query_vec: np.ndarray, rows: list, top_k: int = 30) -> l
         except Exception:
             pass
 
-    # Debug: print dimension distribution
     if not embeddings:
         print(f"!!! DIMENSION MISMATCH — query is {target_dim}-d, stored embeddings are: {dim_counts}")
         print(f"!!! Photos uploaded with old embedding model. Re-upload required.")
@@ -310,7 +385,7 @@ def batch_cosine_search(query_vec: np.ndarray, rows: list, top_k: int = 30) -> l
     return [(float(scores[i]), valid_rows[i]) for i in top_idx]
 
 # ── OCR ───────────────────────────────────────────────────────────────────────
-def extract_ocr(img: PILImage.Image) -> str | None:
+def extract_ocr(img: PILImage.Image):
     if not OCR_AVAILABLE: return None
     try:
         w, h = img.size
@@ -385,65 +460,71 @@ def process_upload_batch(user_id: str, file_data_list: list):
                             "total":len(file_data_list),"errors":[],"results":[]}
     user_dir = os.path.join(UPLOAD_DIR, user_id)
     os.makedirs(user_dir, exist_ok=True)
-    db = sqlite3.connect(DB_PATH)
-    db.row_factory = sqlite3.Row
-    db.execute("PRAGMA journal_mode=WAL")
 
-    for filename, raw in file_data_list:
-        try:
-            img = PILImage.open(io.BytesIO(raw))
-            img.verify()
-            img = PILImage.open(io.BytesIO(raw))
-            w, h = img.size
+    raw_conn = _pool.getconn()
+    try:
+        for filename, raw in file_data_list:
+            try:
+                img = PILImage.open(io.BytesIO(raw))
+                img.verify()
+                img = PILImage.open(io.BytesIO(raw))
+                w, h = img.size
 
-            phash = perceptual_hash(img, raw)
-            if db.execute("SELECT id FROM image_index WHERE user_id=? AND perceptual_hash=?",
-                         (user_id, phash)).fetchone():
-                upload_jobs[user_id]["errors"].append({"file":filename,"error":"Duplicate"})
-                upload_jobs[user_id]["processed"] += 1
-                continue
+                phash = perceptual_hash(img, raw)
+                with raw_conn.cursor() as cur:
+                    cur.execute("SELECT id FROM image_index WHERE user_id=%s AND perceptual_hash=%s",
+                                (user_id, phash))
+                    dup = cur.fetchone()
+                if dup:
+                    upload_jobs[user_id]["errors"].append({"file":filename,"error":"Duplicate"})
+                    upload_jobs[user_id]["processed"] += 1
+                    raw_conn.commit()
+                    continue
 
-            taken_at, lat, lon, device = extract_exif(img)
-            ocr_text = extract_ocr(img)
-            caption  = generate_caption(img, filename)
+                taken_at, lat, lon, device = extract_exif(img)
+                ocr_text = extract_ocr(img)
+                caption  = generate_caption(img, filename)
 
-            # Blend OCR into caption for better search
-            caption_for_emb = caption
-            if ocr_text:
-                caption_for_emb = caption + " " + ocr_text[:120]
+                caption_for_emb = caption
+                if ocr_text:
+                    caption_for_emb = caption + " " + ocr_text[:120]
 
-            emb     = image_to_embedding(caption_for_emb, filename)
-            enc_emb = encrypt_embedding(emb)
+                emb     = image_to_embedding(caption_for_emb, filename)
+                enc_emb = encrypt_embedding(emb)
 
-            thumb_fn = uuid.uuid4().hex + ".jpg"
-            with open(os.path.join(user_dir, thumb_fn), "wb") as tf:
-                tf.write(make_thumbnail(img))
-            thumb_url = f"/static/uploads/{user_id}/{thumb_fn}"
+                thumb_fn = uuid.uuid4().hex + ".jpg"
+                with open(os.path.join(user_dir, thumb_fn), "wb") as tf:
+                    tf.write(make_thumbnail(img))
+                thumb_url = f"/static/uploads/{user_id}/{thumb_fn}"
 
-            iid = str(uuid.uuid4())
-            db.execute("""INSERT INTO image_index
-                (id,user_id,source_id,embedding_enc,caption,ocr_text,
-                 perceptual_hash,taken_at,latitude,longitude,
-                 location_name,device_model,width,height,file_size,
-                 thumbnail_url,source_type)
-                VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)""",
-                (iid,user_id,f"upload_{filename}",enc_emb,caption,ocr_text,
-                 phash,taken_at,lat,lon,"Uploaded",device,w,h,len(raw),
-                 thumb_url,"upload"))
-            db.commit()
-            upload_jobs[user_id]["results"].append({
-                "id":iid,"filename":filename,"caption":caption,
-                "thumbnail_url":thumb_url,"taken_at":taken_at,
-            })
-        except Exception as e:
-            upload_jobs[user_id]["errors"].append({"file":filename,"error":str(e)})
-        upload_jobs[user_id]["processed"] += 1
+                iid = str(uuid.uuid4())
+                with raw_conn.cursor() as cur:
+                    cur.execute("""INSERT INTO image_index
+                        (id,user_id,source_id,embedding_enc,caption,ocr_text,
+                         perceptual_hash,taken_at,latitude,longitude,
+                         location_name,device_model,width,height,file_size,
+                         thumbnail_url,source_type)
+                        VALUES(%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                        (iid,user_id,f"upload_{filename}",psycopg2.Binary(enc_emb),caption,ocr_text,
+                         phash,taken_at,lat,lon,"Uploaded",device,w,h,len(raw),
+                         thumb_url,"upload"))
+                raw_conn.commit()
 
-    upload_jobs[user_id]["status"] = "done"
-    db.close()
+                upload_jobs[user_id]["results"].append({
+                    "id":iid,"filename":filename,"caption":caption,
+                    "thumbnail_url":thumb_url,"taken_at":taken_at,
+                })
+            except Exception as e:
+                raw_conn.rollback()
+                upload_jobs[user_id]["errors"].append({"file":filename,"error":str(e)})
+            upload_jobs[user_id]["processed"] += 1
+
+        upload_jobs[user_id]["status"] = "done"
+    finally:
+        _pool.putconn(raw_conn)
 
 # ── Gemini query planner ──────────────────────────────────────────────────────
-def parse_query_with_gemini(query: str) -> dict | None:
+def parse_query_with_gemini(query: str):
     if not GEMINI_AVAILABLE or not _gemini_client: return None
     try:
         now = datetime.now().isoformat()
@@ -466,7 +547,6 @@ Rules:
 - visual_concept: remove filler words (show me, find, photos of)
 - last month=past 30 days, last week=past 7 days"""
 
-        # Handle both new google-genai and old google-generativeai SDK
         if _gemini_model == "old-sdk":
             resp = _gemini_client.generate_content(prompt)
             text = resp.text
@@ -487,7 +567,6 @@ def parse_query(query: str) -> dict:
     result = parse_query_with_gemini(query)
     if result: return result
 
-    # Rule-based fallback
     q = query.lower(); now = datetime.now()
     tr = {"start":None,"end":None}
     if "today"       in q: tr={"start":now.replace(hour=0,minute=0).isoformat(),"end":now.isoformat()}
@@ -523,6 +602,13 @@ def parse_query(query: str) -> dict:
     return {"time_range":tr,"location":loc,"visual_concept":concept.strip() or query,
             "ocr_keywords":ocr_kw,"ocr_only":ocr_only,"raw_query":query}
 
+# ── Helpers ───────────────────────────────────────────────────────────────────
+def _iso(v):
+    """psycopg2 returns datetime objects — JSON-serialize them as ISO strings."""
+    if v is None: return None
+    if isinstance(v, datetime): return v.isoformat()
+    return v
+
 # ── Auth routes ───────────────────────────────────────────────────────────────
 @app.route("/api/auth/demo-login", methods=["POST"])
 def demo_login():
@@ -530,12 +616,12 @@ def demo_login():
     email = data.get("email","demo@visionsearch.app")
     name  = data.get("name","Demo User")
     db    = get_db()
-    user  = db.execute("SELECT * FROM users WHERE email=?", (email,)).fetchone()
+    user  = db.execute("SELECT * FROM users WHERE email=%s", (email,)).fetchone()
     if not user:
         uid = str(uuid.uuid4())
-        db.execute("INSERT INTO users (id,email,name) VALUES (?,?,?)", (uid,email,name))
+        db.execute("INSERT INTO users (id,email,name) VALUES (%s,%s,%s)", (uid,email,name))
         db.commit()
-        user = db.execute("SELECT * FROM users WHERE id=?", (uid,)).fetchone()
+        user = db.execute("SELECT * FROM users WHERE id=%s", (uid,)).fetchone()
     token = make_token(user["id"])
     resp  = jsonify({"token":token,"user":{"id":user["id"],"email":user["email"],"name":user["name"]}})
     resp.set_cookie("vs_token",token,httponly=True,samesite="Lax",max_age=604800)
@@ -549,9 +635,10 @@ def logout():
 @require_auth
 def me():
     db    = get_db()
-    user  = db.execute("SELECT id,email,name FROM users WHERE id=?", (g.user_id,)).fetchone()
+    user  = db.execute("SELECT id,email,name FROM users WHERE id=%s", (g.user_id,)).fetchone()
     if not user: return jsonify({"error":"Not found"}), 404
-    count = db.execute("SELECT COUNT(*) as c FROM image_index WHERE user_id=?", (g.user_id,)).fetchone()["c"]
+    count_row = db.execute("SELECT COUNT(*) AS c FROM image_index WHERE user_id=%s", (g.user_id,)).fetchone()
+    count = count_row["c"] if count_row else 0
     return jsonify({"user":dict(user),"stats":{"indexed":count},
                     "upload_job":upload_jobs.get(g.user_id,{})})
 
@@ -559,8 +646,6 @@ def me():
 @app.route("/api/upload", methods=["POST"])
 @require_auth
 def upload_photos():
-    # Block uploads if Sentence Transformers not loaded
-    # Uploading without ST produces empty embeddings that break search
     if not AI_READY:
         return jsonify({"error":"AI components still loading. Please wait 30-60 seconds and try again."}), 503
     files = request.files.getlist("photos")
@@ -608,18 +693,16 @@ def search():
     plan = parse_query(query)
     db   = get_db()
 
-    sql, params = "SELECT * FROM image_index WHERE user_id=?", [g.user_id]
-    if plan["time_range"]["start"]: sql += " AND taken_at >= ?"; params.append(plan["time_range"]["start"])
-    if plan["time_range"]["end"]:   sql += " AND taken_at <= ?"; params.append(plan["time_range"]["end"])
-    if plan["location"]:            sql += " AND location_name LIKE ?"; params.append(f"%{plan['location']}%")
+    sql, params = "SELECT * FROM image_index WHERE user_id=%s", [g.user_id]
+    if plan["time_range"]["start"]: sql += " AND taken_at >= %s"; params.append(plan["time_range"]["start"])
+    if plan["time_range"]["end"]:   sql += " AND taken_at <= %s"; params.append(plan["time_range"]["end"])
+    if plan["location"]:            sql += " AND location_name ILIKE %s"; params.append(f"%{plan['location']}%")
 
     rows = db.execute(sql, params).fetchall()
     if not rows and (plan["time_range"]["start"] or plan["location"]):
-        rows = db.execute("SELECT * FROM image_index WHERE user_id=?", [g.user_id]).fetchall()
+        rows = db.execute("SELECT * FROM image_index WHERE user_id=%s", [g.user_id]).fetchall()
 
-    # ── OCR document search ────────────────────────────────────────────────────
     if plan.get("ocr_only"):
-        # These signals ONLY appear in real financial documents
         fin_signals = ["total","subtotal","amount due","pkr","rs.","rs ","price",
                        "invoice no","receipt","paid","balance due","tax",
                        "payment","cash","qty","quantity","charges","grand total",
@@ -632,7 +715,6 @@ def search():
             if not row["ocr_text"]: continue
             ocr_lower = row["ocr_text"].lower()
             words = [w for w in ocr_lower.split() if len(w) >= 3]
-            # Must have substantial text AND multiple strong financial signals
             if len(words) < 20: continue
             hits = sum(1 for s in fin_signals if s in ocr_lower)
             if hits >= 3:
@@ -640,16 +722,14 @@ def search():
         ocr_results.sort(key=lambda x: x[0], reverse=True)
         return jsonify({"results":[{
             "id":r["id"],"thumbnail_url":r["thumbnail_url"],"caption":r["caption"],
-            "location":r["location_name"],"taken_at":r["taken_at"],
+            "location":r["location_name"],"taken_at":_iso(r["taken_at"]),
             "score":round(s,3),"ocr_text":r["ocr_text"],"source_type":r["source_type"]
         } for s,r in ocr_results[:20]],
         "plan":plan,"total":len(ocr_results),"query":query})
 
-    # ── Visual semantic search ─────────────────────────────────────────────────
     query_vec  = text_to_embedding(plan["visual_concept"])
     top_scored = batch_cosine_search(query_vec, rows, top_k=50)
 
-    # Caption keyword boost
     query_words = set(plan["visual_concept"].lower().split())
     boosted = []
     for score, row in top_scored:
@@ -663,7 +743,6 @@ def search():
         boosted.append((score + bonus, row))
     boosted.sort(key=lambda x: x[0], reverse=True)
 
-    # Return top results within 35% of top score, always at least top 5
     top_score = boosted[0][0] if boosted else 0
     if top_score > 0:
         threshold = top_score * 0.65
@@ -674,7 +753,7 @@ def search():
 
     return jsonify({"results":[{
         "id":r["id"],"thumbnail_url":r["thumbnail_url"],"caption":r["caption"],
-        "location":r["location_name"],"taken_at":r["taken_at"],
+        "location":r["location_name"],"taken_at":_iso(r["taken_at"]),
         "score":round(min(s,1.0),3),
         "ocr_text":r["ocr_text"] if r["ocr_text"] and r["ocr_text"]!="No text detected" else None,
         "source_type":r["source_type"]
@@ -689,12 +768,14 @@ def list_images():
     page     = int(request.args.get("page",1))
     per_page = int(request.args.get("per_page",24))
     offset   = (page-1)*per_page
-    rows  = db.execute("SELECT * FROM image_index WHERE user_id=? ORDER BY taken_at DESC LIMIT ? OFFSET ?",
-                       (g.user_id,per_page,offset)).fetchall()
-    total = db.execute("SELECT COUNT(*) as c FROM image_index WHERE user_id=?", (g.user_id,)).fetchone()["c"]
+    rows  = db.execute(
+        "SELECT * FROM image_index WHERE user_id=%s ORDER BY taken_at DESC NULLS LAST LIMIT %s OFFSET %s",
+        (g.user_id, per_page, offset)).fetchall()
+    total_row = db.execute("SELECT COUNT(*) AS c FROM image_index WHERE user_id=%s", (g.user_id,)).fetchone()
+    total = total_row["c"] if total_row else 0
     return jsonify({"images":[{"id":r["id"],"thumbnail_url":r["thumbnail_url"],
         "caption":r["caption"],"location":r["location_name"],
-        "taken_at":r["taken_at"],"source_type":r["source_type"]} for r in rows],
+        "taken_at":_iso(r["taken_at"]),"source_type":r["source_type"]} for r in rows],
         "total":total,"page":page,"per_page":per_page})
 
 # ── Stats ─────────────────────────────────────────────────────────────────────
@@ -708,18 +789,32 @@ def ai_ready():
         "ocr": OCR_AVAILABLE,
     })
 
+@app.route("/healthz")
+def healthz():
+    """Railway healthcheck — verifies DB connectivity."""
+    try:
+        conn = _pool.getconn()
+        try:
+            with conn.cursor() as cur:
+                cur.execute("SELECT 1")
+                cur.fetchone()
+        finally:
+            _pool.putconn(conn)
+        return jsonify({"ok": True, "ai_ready": AI_READY}), 200
+    except Exception as e:
+        return jsonify({"ok": False, "error": str(e)}), 500
+
 @app.route("/api/user/stats")
 @require_auth
 def user_stats():
     db    = get_db()
-    total = db.execute("SELECT COUNT(*) as c FROM image_index WHERE user_id=?", (g.user_id,)).fetchone()["c"]
-    locs  = db.execute("SELECT location_name,COUNT(*) as c FROM image_index WHERE user_id=? GROUP BY location_name ORDER BY c DESC LIMIT 6", (g.user_id,)).fetchall()
-    upl   = db.execute("SELECT COUNT(*) as c FROM image_index WHERE user_id=? AND source_type='upload'", (g.user_id,)).fetchone()["c"]
+    total = db.execute("SELECT COUNT(*) AS c FROM image_index WHERE user_id=%s", (g.user_id,)).fetchone()["c"]
+    locs  = db.execute("SELECT location_name, COUNT(*) AS c FROM image_index WHERE user_id=%s GROUP BY location_name ORDER BY c DESC LIMIT 6", (g.user_id,)).fetchall()
+    upl   = db.execute("SELECT COUNT(*) AS c FROM image_index WHERE user_id=%s AND source_type='upload'", (g.user_id,)).fetchone()["c"]
     return jsonify({"total_indexed":total,"uploaded_count":upl,"storage_saved_mb":round(total*2.4,1),
                     "index_size_kb":round(total*3.2,1),"ocr_available":OCR_AVAILABLE,
                     "blip_available":BLIP_AVAILABLE,"st_available":ST_AVAILABLE,
                     "cohere_available":COHERE_AVAILABLE,
-
                     "top_locations":[{"name":r["location_name"],"count":r["c"]} for r in locs]})
 
 # ── Delete ────────────────────────────────────────────────────────────────────
@@ -732,7 +827,7 @@ def delete_user_data():
         for f in os.listdir(user_dir):
             try: os.remove(os.path.join(user_dir,f))
             except: pass
-    db.execute("DELETE FROM image_index WHERE user_id=?", (g.user_id,))
+    db.execute("DELETE FROM image_index WHERE user_id=%s", (g.user_id,))
     db.commit()
     upload_jobs.pop(g.user_id, None)
     return jsonify({"ok":True})
@@ -745,7 +840,12 @@ def delete_user_data():
 def index():
     return render_template("index.html")
 
-if __name__ == "__main__":
+# Initialize schema on import so gunicorn workers see a ready DB
+try:
     init_db()
-    print("✓ Vision Search v4.0 — http://localhost:5000")
-    app.run(debug=False, port=5000, threaded=True, host="0.0.0.0")
+except Exception as _e:
+    print(f"⚠ init_db on import failed: {_e}")
+
+if __name__ == "__main__":
+    print("✓ Vision Search v4.1 — http://localhost:5000")
+    app.run(debug=False, port=int(os.environ.get("PORT", 5000)), threaded=True, host="0.0.0.0")
