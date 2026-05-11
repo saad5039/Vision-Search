@@ -6,12 +6,20 @@ For production (Railway) gunicorn launches app:app directly.
 import os, sys
 
 def check_deps():
+    # map: display name → actual import name
+    pkgs = {
+        'flask':        'flask',
+        'PyJWT':        'jwt',
+        'cryptography': 'cryptography',
+        'numpy':        'numpy',
+        'psycopg2':     'psycopg2',
+    }
     missing = []
-    for pkg in ['flask', 'jwt', 'cryptography', 'numpy', 'psycopg2']:
+    for display, module in pkgs.items():
         try:
-            __import__(pkg)
+            __import__(module)
         except ImportError:
-            missing.append(pkg)
+            missing.append(display)
     if missing:
         print(f"❌ Missing packages: {', '.join(missing)}")
         print(f"   Run: pip install -r requirements.txt")
@@ -24,6 +32,14 @@ if __name__ == "__main__":
         print("   Local:    set DATABASE_URL=postgresql://user:pass@localhost:5432/visionsearch")
         print("   Railway:  add the PostgreSQL plugin — it injects DATABASE_URL automatically.")
         sys.exit(1)
+
+    import subprocess
+    print("▶ Running database migrations…")
+    result = subprocess.run([sys.executable, "-m", "alembic", "upgrade", "head"])
+    if result.returncode != 0:
+        print("❌ Alembic migration failed — aborting.")
+        sys.exit(1)
+    print("✓ Migrations up to date.")
 
     from app import app
     port = int(os.environ.get("PORT", 5000))

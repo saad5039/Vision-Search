@@ -840,11 +840,8 @@ def delete_user_data():
 def index():
     return render_template("index.html")
 
-# Initialize schema on import so gunicorn workers see a ready DB
-try:
-    init_db()
-except Exception as _e:
-    print(f"⚠ init_db on import failed: {_e}")
+# Schema is managed by Alembic — run `alembic upgrade head` before starting the app.
+# (Railway runs it automatically as part of the start command.)
 
 if __name__ == "__main__":
     print("✓ Vision Search v4.1 — http://localhost:5000")
