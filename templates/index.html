@@ -1,0 +1,1280 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+<title>Vision Search</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@500;600;700;800&display=swap" rel="stylesheet"/>
+<style>
+:root{
+  --bg:#07070f;--bg2:#0d0d18;--bg3:#12121e;--bg4:#181825;--surface:#1e1e2e;
+  --border:rgba(255,255,255,0.06);--border2:rgba(255,255,255,0.12);
+  --accent:#6366f1;--accent2:#818cf8;--accent3:#a5b4fc;
+  --glow:rgba(99,102,241,0.20);--teal:#06b6d4;--green:#10b981;
+  --amber:#f59e0b;--red:#ef4444;--pink:#ec4899;
+  --text:#f1f1f8;--text2:#9494b8;--text3:#44445c;
+  --r:10px;--r2:16px;--r3:24px;--nav:64px;
+  --ease:cubic-bezier(.4,0,.2,1);
+  --font:'Inter',system-ui,sans-serif;--font-d:'Space Grotesk',system-ui,sans-serif;
+}
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{font-family:var(--font);background:var(--bg);color:var(--text);min-height:100vh;
+  line-height:1.6;-webkit-font-smoothing:antialiased;overflow-x:hidden}
+a{color:inherit;text-decoration:none}
+button{cursor:pointer;font-family:var(--font);border:none;background:none;color:inherit}
+input{font-family:var(--font)}
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:var(--bg2)}
+::-webkit-scrollbar-thumb{background:var(--surface);border-radius:3px}
+
+/* NAV */
+#topnav{
+  position:fixed;top:0;left:0;right:0;z-index:100;height:var(--nav);
+  background:rgba(7,7,15,0.85);backdrop-filter:blur(24px);
+  border-bottom:1px solid var(--border);
+  display:flex;align-items:center;padding:0 28px;gap:16px;
+}
+.nav-brand{display:flex;align-items:center;gap:10px;cursor:pointer;flex-shrink:0}
+.nav-brand-mark{
+  width:32px;height:32px;border-radius:8px;flex-shrink:0;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  display:flex;align-items:center;justify-content:center;font-size:16px;
+  box-shadow:0 0 20px var(--glow);
+}
+.nav-brand-name{font-family:var(--font-d);font-size:16px;font-weight:700;letter-spacing:-.3px}
+.nav-search-wrap{
+  flex:1;max-width:480px;
+  display:flex;align-items:center;gap:8px;
+  background:var(--bg3);border:1px solid var(--border);
+  border-radius:100px;padding:0 6px 0 16px;height:38px;transition:.15s var(--ease);
+}
+.nav-search-wrap:focus-within{border-color:var(--accent);box-shadow:0 0 0 3px var(--glow)}
+.nav-search-wrap input{flex:1;background:none;border:none;outline:none;color:var(--text);font-size:14px}
+.nav-search-wrap input::placeholder{color:var(--text3)}
+.nav-search-go{background:var(--accent);color:#fff;border-radius:100px;
+  padding:5px 14px;font-size:13px;font-weight:500;transition:.15s var(--ease)}
+.nav-search-go:hover{background:var(--accent2)}
+.nav-gap{flex:1}
+.nav-links{display:flex;align-items:center;gap:2px}
+.nav-link{padding:6px 14px;border-radius:8px;font-size:13.5px;font-weight:500;
+  color:var(--text2);transition:.15s var(--ease);cursor:pointer}
+.nav-link:hover,.nav-link.on{color:var(--text);background:var(--bg3)}
+.nav-avatar{width:32px;height:32px;border-radius:50%;margin-left:6px;
+  background:linear-gradient(135deg,var(--accent),var(--teal));
+  display:flex;align-items:center;justify-content:center;
+  font-size:12px;font-weight:700;cursor:pointer;font-family:var(--font-d)}
+
+/* TOAST */
+#toast-container{position:fixed;bottom:24px;right:24px;z-index:9999;
+  display:flex;flex-direction:column;gap:8px}
+.toast{background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r);
+  padding:12px 18px;font-size:13.5px;max-width:320px;
+  box-shadow:0 8px 40px rgba(0,0,0,.6);animation:toastIn .2s var(--ease);
+  display:flex;align-items:center;gap:10px}
+.toast.success{border-color:rgba(16,185,129,.4)}
+.toast.error{border-color:rgba(239,68,68,.4)}
+@keyframes toastIn{from{transform:translateX(12px);opacity:0}}
+
+/* PAGES */
+.page{display:none;padding-top:var(--nav);min-height:100vh}
+.page.active{display:block}
+#page-landing{display:none;flex-direction:column;padding-top:0}
+#page-landing.active{display:flex}
+
+/* LANDING — sleek & interactive */
+.hero{
+  min-height:100vh;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;
+  padding:130px 24px 80px;position:relative;overflow:hidden;
+}
+
+/* Aurora gradient background */
+.hero-aurora{
+  position:absolute;inset:0;pointer-events:none;
+  background:
+    radial-gradient(ellipse 100% 80% at 30% 20%,rgba(99,102,241,0.18),transparent 60%),
+    radial-gradient(ellipse 80% 60% at 80% 70%,rgba(6,182,212,0.12),transparent 60%),
+    radial-gradient(ellipse 60% 50% at 50% 100%,rgba(236,72,153,0.10),transparent 60%);
+  animation:auroraShift 20s ease-in-out infinite alternate;
+}
+@keyframes auroraShift{
+  0%{transform:translate(0,0) scale(1)}
+  50%{transform:translate(-3%,2%) scale(1.05)}
+  100%{transform:translate(2%,-2%) scale(0.98)}
+}
+
+/* Animated dot grid */
+.hero-grid{
+  position:absolute;inset:0;pointer-events:none;
+  background-image:radial-gradient(circle,rgba(255,255,255,0.05) 1px,transparent 1px);
+  background-size:32px 32px;
+  mask-image:radial-gradient(ellipse 80% 70% at 50% 50%,black 30%,transparent 100%);
+}
+
+/* Floating orbs */
+.hero-orbs{position:absolute;inset:0;pointer-events:none;overflow:hidden}
+.orb{position:absolute;border-radius:50%;filter:blur(60px);opacity:.6}
+.orb1{width:400px;height:400px;background:rgba(99,102,241,0.25);
+  top:-100px;left:-50px;animation:floatA 18s ease-in-out infinite}
+.orb2{width:350px;height:350px;background:rgba(6,182,212,0.18);
+  bottom:-80px;right:-50px;animation:floatB 22s ease-in-out infinite}
+.orb3{width:280px;height:280px;background:rgba(236,72,153,0.13);
+  top:40%;left:60%;animation:floatC 25s ease-in-out infinite}
+@keyframes floatA{0%,100%{transform:translate(0,0)}50%{transform:translate(60px,40px)}}
+@keyframes floatB{0%,100%{transform:translate(0,0)}50%{transform:translate(-50px,-30px)}}
+@keyframes floatC{0%,100%{transform:translate(0,0)}50%{transform:translate(-40px,50px)}}
+
+.hero-pill{
+  display:inline-flex;align-items:center;gap:9px;
+  background:rgba(99,102,241,0.08);border:1px solid rgba(99,102,241,0.25);
+  border-radius:100px;padding:7px 18px;font-size:12.5px;
+  color:var(--accent3);margin-bottom:32px;position:relative;font-weight:500;
+  backdrop-filter:blur(12px);
+  animation:fadeUp .8s var(--ease) backwards;
+}
+.hero-pill-dot{width:6px;height:6px;background:var(--green);border-radius:50%;
+  box-shadow:0 0 12px var(--green);animation:blink 2s infinite}
+@keyframes blink{0%,100%{opacity:1}50%{opacity:.3}}
+@keyframes fadeUp{from{opacity:0;transform:translateY(14px)}}
+
+.hero-wordmark-wrap{position:relative;margin-bottom:14px}
+.hero-wordmark{
+  font-family:var(--font-d);font-size:clamp(56px,10vw,108px);font-weight:800;
+  letter-spacing:-0.045em;text-align:center;line-height:1;
+  position:relative;
+  background:linear-gradient(135deg,#fff 0%,var(--accent2) 40%,var(--teal) 80%,#fff 100%);
+  background-size:200% 200%;
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text;
+  animation:gradientShift 8s ease-in-out infinite,fadeUp 1s var(--ease) .1s backwards;
+}
+@keyframes gradientShift{
+  0%,100%{background-position:0% 50%}
+  50%{background-position:100% 50%}
+}
+
+.hero-tagline{
+  font-family:var(--font-d);font-size:clamp(20px,3vw,30px);font-weight:500;
+  text-align:center;color:var(--text);margin-bottom:18px;position:relative;
+  letter-spacing:-.015em;opacity:.92;
+  animation:fadeUp .9s var(--ease) .3s backwards;
+}
+.hero-desc{
+  font-size:clamp(14px,1.5vw,16.5px);color:var(--text2);text-align:center;
+  max-width:540px;line-height:1.75;margin-bottom:40px;position:relative;
+  animation:fadeUp .9s var(--ease) .5s backwards;
+}
+.hero-btns{display:flex;gap:12px;flex-wrap:wrap;justify-content:center;position:relative;
+  animation:fadeUp .9s var(--ease) .7s backwards;}
+.btn-p{background:var(--accent);color:#fff;padding:13px 28px;border-radius:100px;
+  font-size:14px;font-weight:600;transition:.18s var(--ease);letter-spacing:.01em;
+  display:inline-flex;align-items:center;
+  box-shadow:0 4px 24px rgba(99,102,241,.25);position:relative;overflow:hidden}
+.btn-p::before{content:'';position:absolute;inset:0;
+  background:linear-gradient(120deg,transparent 30%,rgba(255,255,255,.18) 50%,transparent 70%);
+  transform:translateX(-100%);transition:transform .6s var(--ease)}
+.btn-p:hover::before{transform:translateX(100%)}
+.btn-p:hover{background:var(--accent2);transform:translateY(-2px);
+  box-shadow:0 12px 36px rgba(99,102,241,.45)}
+.btn-g{color:var(--text2);padding:13px 28px;border-radius:100px;font-size:14px;
+  font-weight:500;border:1px solid var(--border2);transition:.18s var(--ease);
+  background:rgba(255,255,255,0.02);backdrop-filter:blur(8px)}
+.btn-g:hover{color:var(--text);border-color:rgba(255,255,255,.25);
+  background:rgba(255,255,255,0.05)}
+
+/* Marquee tech strip */
+.hero-marquee{
+  margin-top:48px;width:100%;max-width:900px;
+  position:relative;overflow:hidden;
+  mask-image:linear-gradient(90deg,transparent,black 12%,black 88%,transparent);
+  animation:fadeUp 1s var(--ease) .9s backwards;
+}
+.marquee-track{
+  display:flex;gap:28px;align-items:center;white-space:nowrap;
+  animation:marquee 35s linear infinite;
+}
+.m-item{font-size:13px;color:var(--text2);font-weight:500;letter-spacing:.01em}
+.m-dot{width:4px;height:4px;background:var(--text3);border-radius:50%;flex-shrink:0}
+@keyframes marquee{
+  0%{transform:translateX(0)}
+  100%{transform:translateX(-50%)}
+}
+
+/* Stats */
+.hero-stats{
+  display:flex;flex-wrap:wrap;justify-content:center;
+  margin-top:56px;position:relative;
+  border:1px solid var(--border);border-radius:var(--r2);
+  background:rgba(13,13,24,0.6);backdrop-filter:blur(12px);overflow:hidden;
+  animation:fadeUp 1s var(--ease) 1.1s backwards;
+}
+.hero-stat{display:flex;flex-direction:column;align-items:center;
+  padding:22px 36px;gap:5px;border-right:1px solid var(--border);
+  transition:.2s var(--ease)}
+.hero-stat:hover{background:rgba(99,102,241,0.04)}
+.hero-stat:last-child{border-right:none}
+.hs-val{font-family:var(--font-d);font-size:22px;font-weight:700;
+  background:linear-gradient(135deg,#fff,var(--accent2));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;background-clip:text}
+.hs-lbl{font-size:11px;color:var(--text3);text-transform:uppercase;letter-spacing:.08em;font-weight:500}
+
+/* Features */
+.feat-section{padding:90px 24px;max-width:1100px;margin:0 auto}
+.eyebrow{font-size:12px;font-weight:600;letter-spacing:.12em;color:var(--accent2);
+  text-transform:uppercase;margin-bottom:10px}
+.sec-h{font-family:var(--font-d);font-size:clamp(26px,3.5vw,38px);font-weight:700;
+  letter-spacing:-.02em;margin-bottom:14px}
+.sec-p{font-size:16px;color:var(--text2);max-width:460px;margin-bottom:48px;line-height:1.7}
+.feat-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(230px,1fr));gap:1px;
+  background:var(--border);border:1px solid var(--border);border-radius:var(--r2);overflow:hidden}
+.feat-card{background:var(--bg2);padding:30px;transition:.18s var(--ease);position:relative;overflow:hidden}
+.feat-card::after{content:'';position:absolute;inset:0;
+  background:linear-gradient(135deg,rgba(99,102,241,0.06),transparent);
+  opacity:0;transition:.18s var(--ease)}
+.feat-card:hover::after{opacity:1}
+.feat-icon{width:42px;height:42px;border-radius:10px;
+  background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.22);
+  display:flex;align-items:center;justify-content:center;font-size:18px;margin-bottom:16px}
+.feat-title{font-family:var(--font-d);font-size:15px;font-weight:600;margin-bottom:8px}
+.feat-desc{font-size:13.5px;color:var(--text2);line-height:1.65}
+
+/* Steps */
+.steps-section{padding:80px 24px;max-width:1100px;margin:0 auto;border-top:1px solid var(--border)}
+.steps-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:20px}
+.step-card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);
+  padding:28px;transition:.15s var(--ease)}
+.step-card:hover{border-color:var(--border2);transform:translateY(-2px)}
+.step-n{font-family:var(--font-d);font-size:40px;font-weight:800;
+  color:var(--accent);opacity:.2;line-height:1;margin-bottom:14px}
+.step-title{font-family:var(--font-d);font-size:15px;font-weight:600;margin-bottom:8px}
+.step-desc{font-size:13.5px;color:var(--text2);line-height:1.65}
+
+.land-cta{border-top:1px solid var(--border);padding:80px 24px;text-align:center}
+
+/* MODAL */
+.modal-bg{position:fixed;inset:0;background:rgba(0,0,0,0.75);z-index:200;
+  display:flex;align-items:center;justify-content:center;
+  backdrop-filter:blur(12px);animation:fadeIn .2s}
+@keyframes fadeIn{from{opacity:0}}
+.modal{background:var(--bg3);border:1px solid var(--border2);border-radius:var(--r2);
+  padding:40px;width:min(420px,calc(100vw-40px));
+  animation:modalUp .28s cubic-bezier(.34,1.56,.64,1);position:relative}
+@keyframes modalUp{from{transform:scale(.93) translateY(8px);opacity:0}}
+.modal-x{position:absolute;top:14px;right:14px;color:var(--text3);
+  font-size:18px;padding:4px 8px;border-radius:6px;transition:.14s var(--ease)}
+.modal-x:hover{color:var(--text);background:var(--bg4)}
+.modal-ico{width:50px;height:50px;border-radius:14px;
+  background:linear-gradient(135deg,var(--accent),var(--accent2));
+  display:flex;align-items:center;justify-content:center;font-size:22px;
+  margin:0 auto 22px;box-shadow:0 0 30px var(--glow)}
+.modal h2{font-family:var(--font-d);font-size:22px;font-weight:700;
+  text-align:center;margin-bottom:6px}
+.modal-sub{color:var(--text2);font-size:13.5px;text-align:center;margin-bottom:28px}
+.f-row{margin-bottom:14px}
+.f-lbl{display:block;font-size:12.5px;font-weight:500;color:var(--text2);margin-bottom:5px}
+.f-inp{width:100%;background:var(--bg4);border:1px solid var(--border);
+  border-radius:var(--r);padding:10px 14px;color:var(--text);
+  font-size:14px;transition:.14s var(--ease);outline:none}
+.f-inp:focus{border-color:var(--accent);box-shadow:0 0 0 3px var(--glow)}
+.f-inp::placeholder{color:var(--text3)}
+.btn-full{width:100%;display:flex;align-items:center;justify-content:center;gap:8px}
+.div-row{display:flex;align-items:center;gap:12px;color:var(--text3);font-size:12.5px;margin:18px 0}
+.div-row::before,.div-row::after{content:'';flex:1;height:1px;background:var(--border)}
+.btn-google{background:#fff;color:#1a1a1a;padding:11px;border-radius:var(--r);
+  font-size:13.5px;font-weight:500;transition:.14s var(--ease);
+  border:1px solid #e0e0e0;display:flex;align-items:center;gap:10px;justify-content:center}
+.btn-google:hover{background:#f5f5f5}
+
+/* DASHBOARD */
+.dash-hero{
+  background:var(--bg2);border-bottom:1px solid var(--border);
+  padding:52px 24px 44px;position:relative;overflow:hidden;
+}
+.dash-hero::before{content:'';position:absolute;inset:0;
+  background:radial-gradient(ellipse 60% 100% at 50% -10%,rgba(99,102,241,0.10),transparent 70%)}
+.dash-ey{font-size:11.5px;font-weight:600;letter-spacing:.12em;text-transform:uppercase;
+  color:var(--accent2);margin-bottom:10px;position:relative}
+.dash-h{font-family:var(--font-d);font-size:clamp(26px,4vw,40px);font-weight:700;
+  letter-spacing:-.02em;margin-bottom:6px;position:relative}
+.dash-sub{color:var(--text2);font-size:15px;margin-bottom:32px;position:relative}
+
+/* Main search */
+.main-search-wrap{max-width:660px;margin:0 auto;position:relative;z-index:1}
+.main-search{
+  display:flex;align-items:center;gap:10px;
+  background:var(--bg3);border:1.5px solid var(--border);
+  border-radius:100px;padding:8px 8px 8px 22px;transition:.15s var(--ease);
+  box-shadow:0 4px 24px rgba(0,0,0,.2);
+}
+.main-search:focus-within{
+  border-color:var(--accent);
+  box-shadow:0 0 0 4px var(--glow),0 8px 32px rgba(0,0,0,.3);
+}
+.main-search input{flex:1;background:none;border:none;outline:none;
+  color:var(--text);font-size:16px}
+.main-search input::placeholder{color:var(--text3)}
+.main-search-go{background:var(--accent);color:#fff;border-radius:100px;
+  padding:10px 22px;font-size:14px;font-weight:600;transition:.15s var(--ease);flex-shrink:0}
+.main-search-go:hover{background:var(--accent2)}
+.search-hints{display:flex;flex-wrap:wrap;gap:8px;justify-content:center;
+  margin-top:14px;position:relative}
+.hint{background:var(--bg3);border:1px solid var(--border);border-radius:100px;
+  padding:5px 14px;font-size:12.5px;color:var(--text2);transition:.14s var(--ease);cursor:pointer}
+.hint:hover{border-color:var(--accent);color:var(--text)}
+
+/* Dashboard body */
+.dash-body{max-width:1280px;margin:0 auto;padding:36px 24px}
+.two-col{display:grid;grid-template-columns:1fr 300px;gap:28px}
+@media(max-width:900px){.two-col{grid-template-columns:1fr}}
+
+/* Cards */
+.card{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r2);padding:24px}
+.card+.card,.card~.card{margin-top:20px}
+.card-hd{display:flex;align-items:center;gap:9px;
+  font-family:var(--font-d);font-size:14px;font-weight:600;margin-bottom:18px}
+.card-ico{width:28px;height:28px;border-radius:7px;
+  background:rgba(99,102,241,0.12);border:1px solid rgba(99,102,241,0.22);
+  display:flex;align-items:center;justify-content:center;font-size:13px}
+
+/* Upload zone */
+.upload-zone{
+  border:1.5px dashed var(--border2);border-radius:var(--r2);
+  padding:40px 24px;text-align:center;cursor:pointer;
+  transition:.15s var(--ease);background:var(--bg3);position:relative;
+  overflow:hidden;
+}
+.upload-zone::before{
+  content:'';position:absolute;inset:0;
+  background:radial-gradient(ellipse 60% 80% at 50% 50%,rgba(99,102,241,0.04),transparent);
+}
+.upload-zone:hover,.upload-zone.drag-over{
+  border-color:var(--accent);background:rgba(99,102,241,0.04);
+}
+.upload-zone input[type="file"]{position:absolute;inset:0;width:100%;height:100%;
+  opacity:0;cursor:pointer}
+.uz-icon{font-size:36px;margin-bottom:12px;position:relative}
+.uz-title{font-size:15px;font-weight:600;margin-bottom:5px;position:relative}
+.uz-sub{font-size:12.5px;color:var(--text3);position:relative}
+.upload-list{margin-top:16px;display:flex;flex-direction:column;gap:7px}
+.upload-item{display:flex;align-items:center;gap:10px;
+  background:var(--bg3);border:1px solid var(--border);
+  border-radius:var(--r);padding:10px 13px;font-size:13px}
+.upload-thumb{width:34px;height:34px;border-radius:6px;object-fit:cover;
+  background:var(--surface);flex-shrink:0}
+.upload-name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.upload-sz{font-size:11.5px;color:var(--text3);flex-shrink:0}
+.u-st{flex-shrink:0;font-size:12px;font-weight:500}
+.u-st.ok{color:var(--green)}.u-st.err{color:var(--red)}.u-st.pending{color:var(--text3)}
+
+/* Progress */
+.prog-wrap{background:var(--bg3);border-radius:100px;height:4px;overflow:hidden;margin:10px 0}
+.prog-bar{height:100%;background:linear-gradient(90deg,var(--accent),var(--teal));
+  border-radius:100px;transition:width .4s var(--ease)}
+
+/* Buttons */
+.btn-sm{padding:8px 18px;border-radius:var(--r);font-size:12.5px;font-weight:500;
+  transition:.14s var(--ease);display:inline-flex;align-items:center;gap:6px}
+.btn-accent{background:var(--accent);color:#fff}.btn-accent:hover{background:var(--accent2)}
+.btn-muted{background:var(--surface);color:var(--text)}.btn-muted:hover{background:var(--bg4)}
+.btn-danger{background:var(--red);color:#fff}.btn-danger:hover{opacity:.85}
+.flex-row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.mt16{margin-top:16px}
+
+/* Stat grid */
+.stat-grid{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.stat-cell{background:var(--bg3);border-radius:var(--r);padding:16px;
+  display:flex;flex-direction:column;gap:4px}
+.s-lbl{font-size:11px;color:var(--text3);font-weight:500;text-transform:uppercase;letter-spacing:.06em}
+.s-val{font-family:var(--font-d);font-size:24px;font-weight:700}
+.s-val.a{color:var(--accent2)}.s-val.g{color:var(--amber)}.s-val.s{color:var(--green)}
+.s-sub{font-size:11px;color:var(--text3)}
+
+/* AI badges */
+.ai-grid{display:flex;flex-direction:column;gap:8px}
+.ai-row{display:flex;align-items:center;justify-content:space-between;
+  background:var(--bg3);border-radius:var(--r);padding:10px 14px}
+.ai-name{font-size:13px;font-weight:500}
+.ai-desc{font-size:11.5px;color:var(--text3)}
+.badge{display:inline-flex;align-items:center;gap:4px;
+  background:var(--bg4);border:1px solid var(--border);
+  border-radius:100px;padding:2px 10px;font-size:11.5px;color:var(--text2)}
+.badge.ok{color:var(--green);border-color:rgba(16,185,129,.3);background:rgba(16,185,129,.08)}
+.badge.off{color:var(--text3);border-color:var(--border)}
+.badge.blue{color:var(--accent2);border-color:rgba(99,102,241,.3);background:rgba(99,102,241,.08)}
+
+/* Photo grid */
+.photos-sec{margin-top:32px}
+.sec-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:16px}
+.sec-title{font-family:var(--font-d);font-size:16px;font-weight:600}
+.photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:10px}
+.photo-card{background:var(--bg3);border:1px solid var(--border);border-radius:var(--r);
+  overflow:hidden;cursor:pointer;transition:.15s var(--ease);position:relative;aspect-ratio:4/3}
+.photo-card:hover{border-color:var(--border2);transform:translateY(-2px);
+  box-shadow:0 10px 32px rgba(0,0,0,.4)}
+.photo-card:hover .photo-ov{opacity:1}
+.photo-img{width:100%;height:100%;object-fit:cover;display:block;background:var(--bg4)}
+.photo-ov{position:absolute;inset:0;
+  background:linear-gradient(to top,rgba(0,0,0,.9) 40%,transparent 80%);
+  opacity:0;transition:.15s var(--ease);
+  display:flex;flex-direction:column;justify-content:flex-end;padding:12px}
+.photo-cap{font-size:12px;line-height:1.4;color:#fff}
+.photo-loc{font-size:11px;color:rgba(255,255,255,.5);margin-top:3px}
+.score-pill{position:absolute;top:8px;right:8px;
+  background:rgba(0,0,0,.7);color:var(--accent3);
+  border-radius:100px;padding:2px 9px;font-size:11px;font-weight:600;
+  backdrop-filter:blur(6px)}
+.empty-state{grid-column:1/-1;text-align:center;padding:60px 24px;color:var(--text3)}
+.empty-icon{font-size:44px;margin-bottom:12px;opacity:.4}
+
+/* SEARCH PAGE */
+.search-pg{max-width:1280px;margin:0 auto;padding:36px 24px}
+.search-hd{margin-bottom:24px}
+.search-q{font-family:var(--font-d);font-size:24px;font-weight:700;
+  letter-spacing:-.01em;margin-bottom:6px}
+.search-meta{color:var(--text2);font-size:13.5px;display:flex;gap:14px;flex-wrap:wrap}
+.plan-box{background:var(--bg2);border:1px solid var(--border);border-radius:var(--r);
+  padding:14px 18px;margin-bottom:20px}
+.plan-hd{font-size:11px;font-weight:600;color:var(--accent2);text-transform:uppercase;
+  letter-spacing:.09em;margin-bottom:10px}
+.plan-chips{display:flex;flex-wrap:wrap;gap:7px}
+.plan-chip{background:var(--bg3);border:1px solid var(--border);border-radius:6px;
+  padding:4px 12px;font-size:12px;color:var(--text2)}
+.plan-chip strong{color:var(--text)}
+.search-loading{display:flex;flex-direction:column;align-items:center;
+  justify-content:center;padding:80px 24px;gap:14px;color:var(--text2)}
+.spinner{width:36px;height:36px;border-radius:50%;
+  border:2.5px solid var(--border);border-top-color:var(--accent);
+  animation:spin .7s linear infinite}
+@keyframes spin{to{transform:rotate(360deg)}}
+.no-res{text-align:center;padding:80px 24px;color:var(--text2)}
+.no-res-icon{font-size:52px;margin-bottom:16px;opacity:.4}
+.no-res h3{font-family:var(--font-d);font-size:20px;font-weight:600;
+  color:var(--text);margin-bottom:8px}
+
+/* SETTINGS */
+.settings-pg{max-width:700px;margin:0 auto;padding:52px 24px}
+.settings-h{font-family:var(--font-d);font-size:28px;font-weight:700;
+  letter-spacing:-.02em;margin-bottom:6px}
+.settings-sub{color:var(--text2);font-size:15px;margin-bottom:44px}
+.settings-sec{margin-bottom:28px}
+.settings-sec-lbl{font-size:11px;font-weight:600;color:var(--text3);
+  text-transform:uppercase;letter-spacing:.1em;margin-bottom:10px}
+.settings-card{background:var(--bg2);border:1px solid var(--border);
+  border-radius:var(--r2);overflow:hidden}
+.settings-row{display:flex;align-items:center;justify-content:space-between;
+  padding:16px 20px;border-bottom:1px solid var(--border);gap:16px}
+.settings-row:last-child{border-bottom:none}
+.sr-info{flex:1}.sr-lbl{font-size:14px;font-weight:500;margin-bottom:2px}
+.sr-desc{font-size:12.5px;color:var(--text2)}
+.sr-val{font-size:13.5px;color:var(--text2);flex-shrink:0}
+.danger-card{background:rgba(239,68,68,.04);border-color:rgba(239,68,68,.18)}
+
+/* LIGHTBOX */
+.lightbox{position:fixed;inset:0;background:rgba(0,0,0,.93);z-index:300;
+  display:flex;align-items:center;justify-content:center;
+  padding:24px;animation:fadeIn .18s}
+.lb-inner{max-width:800px;width:100%;background:var(--bg3);
+  border:1px solid var(--border2);border-radius:var(--r2);overflow:hidden}
+.lb-inner img{width:100%;max-height:58vh;object-fit:contain;background:var(--bg2)}
+.lb-body{padding:22px 24px}
+.lb-cap{font-size:15px;font-weight:500;margin-bottom:10px}
+.lb-meta{display:flex;flex-wrap:wrap;gap:12px;font-size:13px;color:var(--text2)}
+.lb-foot{display:flex;justify-content:space-between;align-items:center;
+  padding:14px 24px;border-top:1px solid var(--border)}
+.ocr-wrap{margin-top:14px}
+.ocr-lbl{font-size:11px;font-weight:600;color:var(--accent2);
+  text-transform:uppercase;letter-spacing:.08em;margin-bottom:7px}
+.ocr-text{background:var(--bg4);border-radius:var(--r);padding:12px;
+  font-family:monospace;font-size:12.5px;color:var(--text2);line-height:1.6;
+  max-height:140px;overflow-y:auto}
+
+/* Misc */
+.hidden{display:none!important}
+.muted{color:var(--text2)}.xs{font-size:12px}
+
+@media(max-width:600px){
+  .nav-links{display:none}
+  .hero-wordmark{font-size:48px}
+  .two-col{grid-template-columns:1fr}
+  .stat-grid{grid-template-columns:1fr}
+  .hero-stats{flex-direction:column}
+  .hero-stat{border-right:none;border-bottom:1px solid var(--border)}
+  .hero-stat:last-child{border-bottom:none}
+}
+</style>
+</head>
+<body>
+
+<!-- NAV -->
+<nav id="topnav">
+  <div class="nav-brand" onclick="navigate('landing')">
+    <div class="nav-brand-mark">⬡</div>
+    <span class="nav-brand-name">Vision Search</span>
+  </div>
+  <div class="nav-search-wrap hidden" id="nav-search-wrap">
+    <svg width="13" height="13" fill="none" stroke="var(--text3)" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+    <input id="nav-search-input" type="text" placeholder="Search your photos…" onkeydown="if(event.key==='Enter')doNavSearch()"/>
+    <button class="nav-search-go" onclick="doNavSearch()">Search</button>
+  </div>
+  <div class="nav-gap"></div>
+  <div class="nav-links hidden" id="nav-links">
+    <div class="nav-link" onclick="navigate('dashboard')" data-page="dashboard">Home</div>
+    <div class="nav-link" onclick="navigate('search')" data-page="search">Search</div>
+    <div class="nav-link" onclick="navigate('settings')" data-page="settings">Settings</div>
+  </div>
+  <div class="nav-avatar hidden" id="nav-avatar">?</div>
+</nav>
+
+<!-- LANDING -->
+<div id="page-landing" class="page">
+  <div class="hero">
+    <div class="hero-aurora"></div>
+    <div class="hero-grid"></div>
+    <div class="hero-orbs">
+      <div class="orb orb1"></div>
+      <div class="orb orb2"></div>
+      <div class="orb orb3"></div>
+    </div>
+
+    <div class="hero-pill">
+      <span class="hero-pill-dot"></span>
+      <span>Privacy-first · AES-256 · Zero raw storage</span>
+    </div>
+
+    <div class="hero-wordmark-wrap">
+      <div class="hero-wordmark">Vision Search</div>
+      <div class="hero-shimmer"></div>
+    </div>
+
+    <div class="hero-tagline">Find any memory in milliseconds</div>
+
+    <p class="hero-desc">An AI-powered personal image search engine. Upload your photos, build a secure semantic index, and retrieve any moment using plain English. Your originals never leave your device.</p>
+
+    <div class="hero-btns">
+      <button class="btn-p" id="hero-cta-btn" onclick="handleHeroCTA()">
+        <span>Get Started</span>
+        <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2.5" viewBox="0 0 24 24" style="margin-left:6px"><path d="M5 12h14M13 5l7 7-7 7"/></svg>
+      </button>
+      <button class="btn-g" onclick="document.getElementById('how').scrollIntoView({behavior:'smooth'})">See how it works</button>
+    </div>
+
+    <div class="hero-marquee">
+      <div class="marquee-track">
+        <span class="m-item">🧠 Sentence Transformers</span>
+        <span class="m-dot"></span>
+        <span class="m-item">🤖 BLIP Captioning</span>
+        <span class="m-dot"></span>
+        <span class="m-item">📝 Tesseract OCR</span>
+        <span class="m-dot"></span>
+
+        <span class="m-item">🔐 AES-256 Encryption</span>
+        <span class="m-dot"></span>
+        <span class="m-item">🧠 Sentence Transformers</span>
+        <span class="m-dot"></span>
+        <span class="m-item">🤖 BLIP Captioning</span>
+        <span class="m-dot"></span>
+        <span class="m-item">📝 Tesseract OCR</span>
+        <span class="m-dot"></span>
+
+        <span class="m-item">🔐 AES-256 Encryption</span>
+      </div>
+    </div>
+
+    <div class="hero-stats">
+      <div class="hero-stat"><div class="hs-val">384-D</div><div class="hs-lbl">Embeddings</div></div>
+      <div class="hero-stat"><div class="hs-val">AES-256</div><div class="hs-lbl">Encrypted</div></div>
+      <div class="hero-stat"><div class="hs-val">&lt; 20ms</div><div class="hs-lbl">Search time</div></div>
+      <div class="hero-stat"><div class="hs-val">0 bytes</div><div class="hs-lbl">Raw photos stored</div></div>
+    </div>
+  </div>
+
+  <div class="feat-section">
+    <div class="eyebrow">Capabilities</div>
+    <h2 class="sec-h">Built for precision and privacy</h2>
+    <p class="sec-p">Every photo is processed, embedded, and encrypted. Originals never leave your device permanently.</p>
+    <div class="feat-grid">
+      <div class="feat-card">
+        <div class="feat-icon">🧠</div>
+        <div class="feat-title">Semantic embeddings</div>
+        <div class="feat-desc">Sentence Transformers (all-MiniLM-L6-v2) generates 384-d vectors that understand meaning — "vehicle" matches cars, bikes, and trucks.</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon">🤖</div>
+        <div class="feat-title">AI captions (BLIP)</div>
+        <div class="feat-desc">BLIP automatically describes every photo — "a red car parked on a street at night" — making search language-aware.</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon">📝</div>
+        <div class="feat-title">OCR text extraction</div>
+        <div class="feat-desc">Tesseract reads text inside your photos — receipts, menus, signs, documents — making them fully searchable.</div>
+      </div>
+      <div class="feat-card">
+        <div class="feat-icon">🔐</div>
+        <div class="feat-title">AES-256 encrypted</div>
+        <div class="feat-desc">Every embedding is encrypted at rest with Fernet AES-256. Your originals are deleted immediately after processing.</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="steps-section" id="how">
+    <div class="eyebrow">How it works</div>
+    <h2 class="sec-h">Four steps to searchable memories</h2>
+    <p class="sec-p">From upload to searchable in seconds.</p>
+    <div class="steps-grid">
+      <div class="step-card"><div class="step-n">01</div><div class="step-title">Upload</div><div class="step-desc">Drop photos into the app. JPG, PNG, WEBP, GIF — up to 50MB each.</div></div>
+      <div class="step-card"><div class="step-n">02</div><div class="step-title">AI processing</div><div class="step-desc">BLIP generates captions, Tesseract extracts text, Sentence Transformers builds a 384-d embedding vector.</div></div>
+      <div class="step-card"><div class="step-n">03</div><div class="step-title">Encrypt & store</div><div class="step-desc">Raw pixels discarded. Only the AES-256 encrypted embedding and metadata are saved.</div></div>
+      <div class="step-card"><div class="step-n">04</div><div class="step-title">Search</div><div class="step-desc">Type anything. Cosine similarity finds the most semantically relevant photos in milliseconds.</div></div>
+    </div>
+  </div>
+
+  <div class="land-cta">
+    <h2 class="sec-h" style="max-width:520px;margin:0 auto 14px">Start searching your memories</h2>
+    <p class="muted" style="margin-bottom:28px;font-size:15px">No Google account required for the demo.</p>
+    <button class="btn-p" onclick="handleHeroCTA()">Get Started</button>
+  </div>
+</div>
+
+<!-- DASHBOARD -->
+<div id="page-dashboard" class="page">
+  <div class="dash-hero">
+    <div class="dash-ey">Dashboard</div>
+    <h1 class="dash-h" id="dash-title">Your Photo Index</h1>
+    <p class="dash-sub" id="dash-sub">Upload photos and search them with natural language.</p>
+    <div class="main-search-wrap">
+      <div class="main-search">
+        <svg width="16" height="16" fill="none" stroke="var(--text3)" stroke-width="2" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+        <input id="main-search-input" type="text" placeholder="Search your photos…" onkeydown="if(event.key==='Enter')doSearch()"/>
+        <button class="main-search-go" onclick="doSearch()">Search</button>
+      </div>
+      <div class="search-hints">
+        <div class="hint" onclick="fillSearch('cars and vehicles')">🚗 Cars</div>
+        <div class="hint" onclick="fillSearch('sunset photos')">🌅 Sunsets</div>
+        <div class="hint" onclick="fillSearch('friends and family')">👥 Friends</div>
+        <div class="hint" onclick="fillSearch('food and restaurants')">🍕 Food</div>
+        <div class="hint" onclick="fillSearch('receipts and bills')">🧾 Receipts</div>
+        <div class="hint" onclick="fillSearch('travel and trips')">✈️ Travel</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="dash-body">
+    <div class="two-col">
+      <div>
+        <!-- Upload -->
+        <div class="card">
+          <div class="card-hd"><div class="card-ico">📤</div> Upload Photos</div>
+          <div class="upload-zone" id="upload-zone">
+            <input type="file" id="upload-input" multiple accept="image/*" onchange="handleFileSelect(this.files)"/>
+            <div class="uz-icon" id="uz-icon">⬆</div>
+            <div class="uz-title" id="uz-title">Drop photos here or click to browse</div>
+            <div class="uz-sub" id="ocr-upload-note">JPG · PNG · WEBP · GIF · BMP &nbsp;·&nbsp; max 50MB per file</div>
+          </div>
+          <div id="ai-loading-banner" class="hidden" style="margin-top:12px;background:rgba(245,158,11,0.1);border:1px solid rgba(245,158,11,0.3);border-radius:10px;padding:12px 16px;font-size:13px;color:#f59e0b;display:flex;align-items:center;gap:10px">
+            <div class="spinner" style="width:16px;height:16px;border-width:2px;border-top-color:#f59e0b"></div>
+            <span>AI models loading — please wait before uploading photos. This takes 30-60 seconds on first run.</span>
+          </div>
+          <div class="upload-list" id="upload-file-list"></div>
+          <div class="flex-row mt16 hidden" id="upload-actions">
+            <button class="btn-sm btn-accent" id="upload-btn" onclick="uploadFiles()">⬆ Upload &amp; Index</button>
+            <button class="btn-sm btn-muted" onclick="clearUploadQueue()">Clear</button>
+            <span class="xs muted" id="upload-count"></span>
+          </div>
+          <div id="upload-progress-wrap" class="hidden" style="margin-top:12px">
+            <div class="prog-wrap"><div class="prog-bar" id="upload-progress-bar" style="width:0%"></div></div>
+            <div class="xs muted" style="margin-top:6px" id="upload-progress-label">Processing…</div>
+          </div>
+        </div>
+
+        <!-- Photos -->
+        <div class="photos-sec">
+          <div class="sec-hd">
+            <div class="sec-title">All Photos</div>
+            <span class="xs muted" id="photos-count"></span>
+          </div>
+          <div class="photo-grid" id="photos-grid">
+            <div class="empty-state">
+              <div class="empty-icon">🖼</div>
+              <div>Upload photos to get started</div>
+            </div>
+          </div>
+          <div style="text-align:center;margin-top:20px" id="load-more-wrap" class="hidden">
+            <button class="btn-sm btn-muted" onclick="loadMorePhotos()">Load more</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Right -->
+      <div>
+        <div class="card">
+          <div class="card-hd"><div class="card-ico">📊</div> Index Stats</div>
+          <div class="stat-grid">
+            <div class="stat-cell"><div class="s-lbl">Indexed</div><div class="s-val a" id="stat-indexed">0</div></div>
+            <div class="stat-cell"><div class="s-lbl">Saved</div><div class="s-val g" id="stat-saved">0 MB</div><div class="s-sub">vs raw</div></div>
+            <div class="stat-cell"><div class="s-lbl">Index size</div><div class="s-val s" id="stat-index-size">0 KB</div></div>
+            <div class="stat-cell"><div class="s-lbl">Compression</div><div class="s-val a" id="stat-compression">—</div></div>
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:20px">
+          <div class="card-hd"><div class="card-ico">🤖</div> AI Components</div>
+          <div class="ai-grid" id="ai-status-grid">
+            <div class="ai-row"><div><div class="ai-name">Cohere Embed API</div><div class="ai-desc">High quality cloud embeddings</div></div><span class="badge off" id="cohere-badge">—</span></div>
+            <div class="ai-row"><div><div class="ai-name">Sentence Transformers</div><div class="ai-desc">Local semantic embeddings</div></div><span class="badge off" id="st-badge">—</span></div>
+            <div class="ai-row"><div><div class="ai-name">BLIP Captioning</div><div class="ai-desc">AI image captions</div></div><span class="badge off" id="blip-badge">—</span></div>
+            <div class="ai-row"><div><div class="ai-name">Tesseract OCR</div><div class="ai-desc">Text extraction</div></div><span class="badge off" id="ocr-badge-dash">—</span></div>
+
+          </div>
+        </div>
+
+        <div class="card" style="margin-top:20px">
+          <div class="card-hd"><div class="card-ico">📍</div> Top Locations</div>
+          <div id="locations-list" class="xs muted">No data yet</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- SEARCH -->
+<div id="page-search" class="page">
+  <div class="search-pg">
+    <div class="search-hd">
+      <div class="search-q" id="search-query-display">Search results</div>
+      <div class="search-meta" id="search-meta"></div>
+    </div>
+    <div id="plan-display" class="plan-box hidden">
+      <div class="plan-hd">AI Query Plan</div>
+      <div class="plan-chips" id="plan-filters"></div>
+    </div>
+    <div id="search-loading" class="search-loading hidden">
+      <div class="spinner"></div>
+      <div class="muted">Searching…</div>
+    </div>
+    <div id="search-results-grid" class="photo-grid"></div>
+    <div id="no-results" class="no-res hidden">
+      <div class="no-res-icon">🔎</div>
+      <h3>No photos found</h3>
+      <p>Try different keywords or upload more photos.</p>
+    </div>
+  </div>
+</div>
+
+<!-- SETTINGS -->
+<div id="page-settings" class="page">
+  <div class="settings-pg">
+    <h1 class="settings-h">Settings</h1>
+    <p class="settings-sub">Manage your account, index, and privacy.</p>
+
+    <div class="settings-sec">
+      <div class="settings-sec-lbl">Account</div>
+      <div class="settings-card">
+        <div class="settings-row">
+          <div class="sr-info"><div class="sr-lbl" id="settings-name">—</div><div class="sr-desc" id="settings-email">—</div></div>
+          <button class="btn-sm btn-muted" onclick="doLogout()">Sign out</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-sec">
+      <div class="settings-sec-lbl">Index & Storage</div>
+      <div class="settings-card">
+        <div class="settings-row"><div class="sr-info"><div class="sr-lbl">Photos indexed</div><div class="sr-desc">Encrypted embeddings</div></div><div class="sr-val" id="settings-indexed">—</div></div>
+        <div class="settings-row"><div class="sr-info"><div class="sr-lbl">Index size</div><div class="sr-desc">Embeddings + metadata only</div></div><div class="sr-val" id="settings-index-size">—</div></div>
+        <div class="settings-row"><div class="sr-info"><div class="sr-lbl">Raw images stored</div><div class="sr-desc">Originals never saved on server</div></div><span class="badge ok">0 bytes</span></div>
+        <div class="settings-row"><div class="sr-info"><div class="sr-lbl">Encryption</div><div class="sr-desc">AES-256 Fernet at rest</div></div><span class="badge blue">AES-256</span></div>
+      </div>
+    </div>
+
+    <div class="settings-sec">
+      <div class="settings-sec-lbl">AI Components</div>
+      <div class="settings-card">
+        <div class="settings-row"><div class="sr-info"><div class="sr-lbl">Cohere Embed API</div><div class="sr-desc" id="cohere-desc">1024-d cloud embeddings — best search quality</div></div><span class="badge" id="cohere-badge-s">—</span></div>
+        <div class="settings-row"><div class="sr-info"><div class="sr-lbl">Sentence Transformers</div><div class="sr-desc" id="st-desc">Local 384-d embeddings — fallback</div></div><span class="badge" id="st-badge-s">—</span></div>
+        <div class="settings-row"><div class="sr-info"><div class="sr-lbl">BLIP Captioning</div><div class="sr-desc" id="blip-desc">Real AI image descriptions</div></div><span class="badge" id="blip-badge-s">—</span></div>
+        <div class="settings-row"><div class="sr-info"><div class="sr-lbl">Tesseract OCR</div><div class="sr-desc" id="ocr-desc">Text extraction from photos</div></div><span class="badge" id="ocr-badge-s">—</span></div>
+
+      </div>
+    </div>
+
+    <div class="settings-sec">
+      <div class="settings-sec-lbl">Privacy</div>
+      <div class="settings-card danger-card">
+        <div class="settings-row">
+          <div class="sr-info"><div class="sr-lbl">Delete all data</div><div class="sr-desc">Removes all embeddings, metadata, and thumbnails. Originals unaffected.</div></div>
+          <button class="btn-sm btn-danger" onclick="deleteAllData()">Delete</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-sec">
+      <div class="settings-sec-lbl">About</div>
+      <div class="settings-card">
+        <div class="settings-row"><div class="sr-info"><div class="sr-lbl">Vision Search v4.0</div><div class="sr-desc">FYP · FAST NUCES Karachi · Spring 2026</div></div><div class="sr-val muted">v4.0</div></div>
+        <div class="settings-row"><div class="sr-info"><div class="sr-lbl">Stack</div><div class="sr-desc">Flask · SQLite · Sentence Transformers · BLIP · Tesseract OCR · AES-256</div></div></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- LOGIN MODAL -->
+<div id="login-modal" class="modal-bg hidden">
+  <div class="modal">
+    <button class="modal-x" onclick="hideLoginModal()">✕</button>
+    <div class="modal-ico">⬡</div>
+    <h2>Sign in</h2>
+    <p class="modal-sub">Enter any name and email to create a demo account.</p>
+    <div class="f-row"><label class="f-lbl">Name</label><input class="f-inp" type="text" id="login-name" placeholder="Your name" value="Demo User"/></div>
+    <div class="f-row"><label class="f-lbl">Email</label><input class="f-inp" type="email" id="login-email" placeholder="you@example.com" value="demo@visionsearch.app"/></div>
+    <button class="btn-p btn-full" style="margin-top:8px" onclick="doLogin()">Continue</button>
+    <div class="div-row">or</div>
+    <button class="btn-google btn-full" onclick="doGoogleLogin()">
+      <svg width="17" height="17" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.34-8.16 2.34-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+      Continue with Google (demo)
+    </button>
+    <p class="xs muted" style="text-align:center;margin-top:16px">Demo prototype · no real OAuth required</p>
+  </div>
+</div>
+
+<!-- LIGHTBOX -->
+<div id="lightbox" class="lightbox hidden" onclick="closeLightbox(event)">
+  <div class="lb-inner" onclick="event.stopPropagation()">
+    <img id="lb-img" src="" alt=""/>
+    <div class="lb-body">
+      <div class="lb-cap" id="lb-caption"></div>
+      <div class="lb-meta" id="lb-meta"></div>
+      <div id="lb-ocr" class="ocr-wrap hidden">
+        <div class="ocr-lbl">Extracted text</div>
+        <div class="ocr-text" id="lb-ocr-text"></div>
+      </div>
+    </div>
+    <div class="lb-foot">
+      <span class="xs muted">Thumbnail only · original never stored</span>
+      <button class="btn-sm btn-muted" onclick="closeLightbox()">Close</button>
+    </div>
+  </div>
+</div>
+
+<div id="toast-container"></div>
+
+<script>
+const state = { token: localStorage.getItem('vs_token')||'', user: null, currentPage:'', photosPage:1, photosTotal:0, ingestionInterval:null };
+
+function toast(msg, type='info', dur=3500) {
+  const el = document.createElement('div');
+  el.className = `toast ${type}`;
+  const ic = type==='success'?'✓':type==='error'?'✕':'ℹ';
+  const col = type==='success'?'var(--green)':type==='error'?'var(--red)':'var(--accent2)';
+  el.innerHTML = `<span style="color:${col}">${ic}</span> ${msg}`;
+  document.getElementById('toast-container').appendChild(el);
+  setTimeout(()=>{ el.style.animation='toastIn .2s reverse'; setTimeout(()=>el.remove(),200); }, dur);
+}
+
+async function api(method, path, body=null) {
+  const opts = { method, headers:{'Content-Type':'application/json'}, credentials:'include' };
+  if (state.token) opts.headers['Authorization'] = `Bearer ${state.token}`;
+  if (body) opts.body = JSON.stringify(body);
+  const res = await fetch(path, opts);
+  const data = await res.json().catch(()=>({}));
+  if (!res.ok) throw new Error(data.error||`HTTP ${res.status}`);
+  return data;
+}
+
+function navigate(page) {
+  document.querySelectorAll('.page').forEach(p=>p.classList.remove('active'));
+  document.getElementById(`page-${page}`).classList.add('active');
+  state.currentPage = page;
+  const auth = !!state.user;
+  // Show nav search only on inner pages when signed in
+  document.getElementById('nav-search-wrap').classList.toggle('hidden', !auth||page==='landing');
+  // Show nav links when signed in (even on landing)
+  document.getElementById('nav-links').classList.toggle('hidden', !auth);
+  document.getElementById('nav-avatar').classList.toggle('hidden', !auth);
+  document.querySelectorAll('.nav-link').forEach(l=>l.classList.toggle('on',l.dataset.page===page));
+  window.history.pushState({page},'',`/${page==='landing'?'':page}`);
+  if (page==='dashboard') onDashboardLoad();
+  if (page==='settings') onSettingsLoad();
+  window.scrollTo(0,0);
+}
+
+function handleHeroCTA() {
+  // If already signed in go to dashboard, else show login
+  if (state.user) { navigate('dashboard'); }
+  else { showLoginModal(); }
+}
+
+async function checkAuth() {
+  // Always show landing page first regardless of auth state
+  const path = location.pathname.replace('/','') || '';
+  const isInnerPage = ['dashboard','search','settings'].includes(path);
+
+  if (!state.token) { navigate('landing'); return; }
+
+  try {
+    const d = await api('GET','/api/auth/me');
+    state.user = d.user; setupAuthUI();
+    // Only redirect to dashboard if user is on an inner page URL
+    // If on landing (/), stay on landing even if signed in
+    if (isInnerPage) {
+      navigate(path);
+    } else {
+      navigate('landing');
+    }
+  } catch(e) {
+    localStorage.removeItem('vs_token'); state.token=''; navigate('landing');
+  }
+}
+
+function setupAuthUI() {
+  const u = state.user;
+  const ini = (u.name||u.email).slice(0,2).toUpperCase();
+  document.getElementById('nav-avatar').textContent = ini;
+  document.getElementById('nav-avatar').classList.remove('hidden');
+  // Update CTA button text if on landing
+  const ctaBtn = document.getElementById('hero-cta-btn');
+  if (ctaBtn) ctaBtn.textContent = 'Go to Dashboard';
+}
+
+async function doLogin() {
+  const name  = document.getElementById('login-name').value.trim()||'Demo User';
+  const email = document.getElementById('login-email').value.trim()||'demo@visionsearch.app';
+  try {
+    const d = await api('POST','/api/auth/demo-login',{name,email});
+    state.token = d.token; state.user = d.user;
+    localStorage.setItem('vs_token',d.token);
+    hideLoginModal(); setupAuthUI(); navigate('dashboard');
+    toast(`Welcome, ${name}!`,'success');
+  } catch(e) { toast(e.message,'error'); }
+}
+async function doGoogleLogin() {
+  document.getElementById('login-name').value='Google User';
+  document.getElementById('login-email').value='google.demo@visionsearch.app';
+  await doLogin();
+}
+async function doLogout() {
+  await api('POST','/api/auth/logout').catch(()=>{});
+  state.token=''; state.user=''; localStorage.removeItem('vs_token');
+  navigate('landing'); toast('Signed out');
+}
+function showLoginModal() { document.getElementById('login-modal').classList.remove('hidden'); }
+function hideLoginModal() { document.getElementById('login-modal').classList.add('hidden'); }
+
+async function checkAIReady() {
+  try {
+    const r = await fetch('/api/ready');
+    const d = await r.json();
+    const banner = document.getElementById('ai-loading-banner');
+    const zone   = document.getElementById('upload-zone');
+    const inp    = document.getElementById('upload-input');
+    if (d.ready) {
+      if (banner) banner.classList.add('hidden');
+      if (zone)   zone.style.opacity = '1';
+      if (inp)    inp.disabled = false;
+      document.getElementById('uz-icon').textContent = '⬆';
+      document.getElementById('uz-title').textContent = 'Drop photos here or click to browse';
+    } else {
+      if (banner) banner.classList.remove('hidden');
+      if (zone)   zone.style.opacity = '0.4';
+      if (inp)    inp.disabled = true;
+      document.getElementById('uz-icon').textContent = '⏳';
+      document.getElementById('uz-title').textContent = 'AI models loading — please wait…';
+      setTimeout(checkAIReady, 3000);  // poll every 3 seconds
+    }
+  } catch(e) { setTimeout(checkAIReady, 3000); }
+}
+
+async function onDashboardLoad() {
+  try {
+    const d = await api('GET','/api/auth/me');
+    const name = d.user.name||d.user.email.split('@')[0];
+    document.getElementById('dash-title').textContent = `Hello, ${name.split(' ')[0]}`;
+    if (d.upload_job && d.upload_job.status==='running') startUploadPoll();
+    loadStats(); loadPhotos();
+    checkAIReady();  // check if AI is ready before allowing uploads
+  } catch(e) {}
+}
+
+async function loadStats() {
+  try {
+    const s = await api('GET','/api/user/stats');
+    document.getElementById('stat-indexed').textContent = s.total_indexed;
+    document.getElementById('stat-saved').textContent = s.storage_saved_mb+' MB';
+    document.getElementById('stat-index-size').textContent = s.index_size_kb+' KB';
+    const ratio = s.storage_saved_mb>0 ? Math.round(s.storage_saved_mb*1024/s.index_size_kb)+'×':'—';
+    document.getElementById('stat-compression').textContent = ratio;
+
+    // AI badges
+    const setBadge = (id, ok, label) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = ok ? '● Active' : '○ Inactive';
+      el.className = 'badge ' + (ok?'ok':'off');
+    };
+    setBadge('cohere-badge', s.cohere_available);
+    setBadge('st-badge', s.st_available);
+    setBadge('blip-badge', s.blip_available);
+    setBadge('ocr-badge-dash', s.ocr_available);
+
+
+    const locs = document.getElementById('locations-list');
+    locs.innerHTML = s.top_locations.length
+      ? s.top_locations.map(l=>`<div style="display:flex;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--border);font-size:13px"><span>📍 ${l.name||'Unknown'}</span><span class="muted">${l.count}</span></div>`).join('')
+      : '<span class="muted">No location data</span>';
+
+    if (s.total_indexed > 0)
+      document.getElementById('dash-sub').textContent = `${s.total_indexed} photos indexed and ready to search.`;
+  } catch(e) {}
+}
+
+async function loadPhotos(reset=true) {
+  if (reset) state.photosPage = 1;
+  try {
+    const d = await api('GET',`/api/images?page=${state.photosPage}&per_page=24`);
+    state.photosTotal = d.total;
+    const grid = document.getElementById('photos-grid');
+    if (reset) grid.innerHTML = '';
+    document.getElementById('photos-count').textContent = `${d.total} total`;
+    if (!d.images.length && reset) {
+      grid.innerHTML = '<div class="empty-state"><div class="empty-icon">🖼</div><div>Upload photos to get started</div></div>';
+      return;
+    }
+    d.images.forEach(img=>grid.appendChild(makePhotoCard(img)));
+    const lmw = document.getElementById('load-more-wrap');
+    lmw.classList.toggle('hidden', state.photosPage*24 >= state.photosTotal);
+  } catch(e) {}
+}
+async function loadMorePhotos() { state.photosPage++; await loadPhotos(false); }
+
+function makePhotoCard(img) {
+  const card = document.createElement('div');
+  card.className = 'photo-card';
+  const date = img.taken_at ? new Date(img.taken_at).toLocaleDateString('en-GB',{day:'numeric',month:'short',year:'numeric'}) : '';
+  card.innerHTML = `
+    <img class="photo-img" src="${img.thumbnail_url}" alt="" loading="lazy"
+      onerror="this.src='https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=400&h=300&fit=crop'"/>
+    <div class="photo-ov">
+      <div class="photo-cap">${img.caption||'Untitled'}</div>
+      <div class="photo-loc">${[date,img.location].filter(Boolean).join(' · ')}</div>
+    </div>`;
+  card.onclick = ()=>openLightbox(img);
+  return card;
+}
+
+function fillSearch(q) {
+  document.getElementById('main-search-input').value = q;
+  document.getElementById('nav-search-input').value = q;
+  doSearch();
+}
+function doNavSearch() {
+  const q = document.getElementById('nav-search-input').value.trim();
+  if (!q) return;
+  document.getElementById('main-search-input').value = q;
+  doSearch();
+}
+async function doSearch() {
+  const q = document.getElementById('main-search-input').value.trim()
+         || document.getElementById('nav-search-input').value.trim();
+  if (!q) { toast('Enter a search query','error'); return; }
+  document.getElementById('nav-search-input').value = q;
+  navigate('search');
+  document.getElementById('search-query-display').textContent = `"${q}"`;
+  document.getElementById('search-meta').innerHTML = '';
+  document.getElementById('search-results-grid').innerHTML = '';
+  document.getElementById('no-results').classList.add('hidden');
+  document.getElementById('plan-display').classList.add('hidden');
+  document.getElementById('search-loading').classList.remove('hidden');
+  try {
+    const d = await api('POST','/api/search',{query:q});
+    document.getElementById('search-loading').classList.add('hidden');
+    const plan = d.plan;
+    if (plan) {
+      document.getElementById('plan-display').classList.remove('hidden');
+      const chips = [];
+      if (plan.time_range?.start) chips.push(`<span class="plan-chip">📅 <strong>From:</strong> ${plan.time_range.start.slice(0,10)}</span>`);
+      if (plan.time_range?.end)   chips.push(`<span class="plan-chip">📅 <strong>To:</strong> ${plan.time_range.end.slice(0,10)}</span>`);
+      if (plan.location)          chips.push(`<span class="plan-chip">📍 <strong>Location:</strong> ${plan.location}</span>`);
+      if (plan.visual_concept)    chips.push(`<span class="plan-chip">🧠 <strong>Concept:</strong> ${plan.visual_concept}</span>`);
+      if (plan.ocr_only)          chips.push(`<span class="plan-chip">📝 <strong>Mode:</strong> OCR document search</span>`);
+      document.getElementById('plan-filters').innerHTML = chips.join('') || '<span class="plan-chip">Semantic search</span>';
+    }
+    document.getElementById('search-meta').innerHTML = `<span>🔎 ${d.total} result${d.total!==1?'s':''}</span>`;
+    if (!d.total) { document.getElementById('no-results').classList.remove('hidden'); return; }
+    const grid = document.getElementById('search-results-grid');
+    d.results.forEach(img=>grid.appendChild(makePhotoCard(img)));
+  } catch(e) {
+    document.getElementById('search-loading').classList.add('hidden');
+    toast(e.message==='Unauthorized'?'Please sign in first':e.message,'error');
+  }
+}
+
+function openLightbox(img) {
+  document.getElementById('lb-img').src = img.thumbnail_url||'';
+  document.getElementById('lb-caption').textContent = img.caption||'Untitled';
+  const date = img.taken_at ? new Date(img.taken_at).toLocaleDateString('en-GB',{weekday:'long',day:'numeric',month:'long',year:'numeric'}) : '';
+  const meta = [];
+  if (date) meta.push(`<span>📅 ${date}</span>`);
+  if (img.location) meta.push(`<span>📍 ${img.location}</span>`);
+  if (img.score) meta.push(`<span>🎯 ${Math.round(img.score*100)}% match</span>`);
+  document.getElementById('lb-meta').innerHTML = meta.join('');
+  const ocr = document.getElementById('lb-ocr');
+  if (img.ocr_text) { ocr.classList.remove('hidden'); document.getElementById('lb-ocr-text').textContent = img.ocr_text; }
+  else ocr.classList.add('hidden');
+  document.getElementById('lightbox').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+}
+function closeLightbox(e) {
+  if (!e||e.currentTarget===e.target) {
+    document.getElementById('lightbox').classList.add('hidden');
+    document.body.style.overflow = '';
+  }
+}
+
+async function onSettingsLoad() {
+  try {
+    const [me,s] = await Promise.all([api('GET','/api/auth/me'), api('GET','/api/user/stats')]);
+    document.getElementById('settings-name').textContent = me.user.name||'Demo User';
+    document.getElementById('settings-email').textContent = me.user.email;
+    document.getElementById('settings-indexed').textContent = `${s.total_indexed} photos`;
+    document.getElementById('settings-index-size').textContent = `${s.index_size_kb} KB`;
+
+    const sb = (id, ok, onLabel, offLabel) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.textContent = ok ? '● Active' : '○ Inactive';
+      el.className = 'badge ' + (ok?'ok':'off');
+    };
+    sb('cohere-badge-s', s.cohere_available);
+    sb('st-badge-s', s.st_available);
+    sb('blip-badge-s', s.blip_available);
+    sb('ocr-badge-s', s.ocr_available);
+
+
+    const note = document.getElementById('ocr-upload-note');
+    if (note) note.textContent = s.ocr_available
+      ? 'JPG · PNG · WEBP · GIF · BMP · max 50MB · OCR active'
+      : 'JPG · PNG · WEBP · GIF · BMP · max 50MB';
+  } catch(e) {}
+}
+
+async function deleteAllData() {
+  if (!confirm('Delete all indexed data? Your original photos are unaffected.')) return;
+  try {
+    await api('DELETE','/api/user/data');
+    toast('All data deleted','success');
+    navigate('dashboard');
+  } catch(e) { toast(e.message,'error'); }
+}
+
+// Upload
+let uploadQueue = [];
+let uploadPollInterval = null;
+
+function handleFileSelect(files) {
+  for (const file of files) {
+    if (uploadQueue.find(q=>q.file.name===file.name&&q.file.size===file.size)) continue;
+    uploadQueue.push({file, previewUrl:URL.createObjectURL(file), status:'pending', id:Math.random().toString(36).slice(2)});
+  }
+  renderUploadQueue();
+}
+
+function renderUploadQueue() {
+  const list = document.getElementById('upload-file-list');
+  const actions = document.getElementById('upload-actions');
+  const count = document.getElementById('upload-count');
+  list.innerHTML = '';
+  if (!uploadQueue.length) { actions.classList.add('hidden'); return; }
+  actions.classList.remove('hidden');
+  count.textContent = `${uploadQueue.length} file${uploadQueue.length!==1?'s':''} selected`;
+  uploadQueue.forEach(item=>{
+    const el = document.createElement('div');
+    el.className = 'upload-item';
+    el.id = `ufi-${item.id}`;
+    const stText = item.status==='ok'?'✓ Indexed':item.status==='err'?'✕ Error':'● Queued';
+    const stCls  = item.status==='ok'?'ok':item.status==='err'?'err':'pending';
+    el.innerHTML = `<img class="upload-thumb" src="${item.previewUrl}" alt=""/>
+      <span class="upload-name">${item.file.name}</span>
+      <span class="upload-sz">${(item.file.size/1024).toFixed(0)} KB</span>
+      <span class="u-st ${stCls}">${stText}</span>`;
+    list.appendChild(el);
+  });
+}
+
+function clearUploadQueue() {
+  uploadQueue = [];
+  document.getElementById('upload-file-list').innerHTML = '';
+  document.getElementById('upload-actions').classList.add('hidden');
+  document.getElementById('upload-input').value = '';
+  document.getElementById('upload-progress-wrap').classList.add('hidden');
+}
+
+async function uploadFiles() {
+  const pending = uploadQueue.filter(q=>q.status==='pending');
+  if (!pending.length) { toast('No files to upload','error'); return; }
+  const btn = document.getElementById('upload-btn');
+  btn.disabled = true; btn.textContent = '⬆ Sending…';
+  const pw = document.getElementById('upload-progress-wrap');
+  const pb = document.getElementById('upload-progress-bar');
+  const pl = document.getElementById('upload-progress-label');
+  pw.classList.remove('hidden'); pb.style.width='5%';
+  pl.textContent = `Sending ${pending.length} photo${pending.length!==1?'s':''} to server…`;
+  const fd = new FormData();
+  pending.forEach(item=>fd.append('photos',item.file));
+  try {
+    const res = await fetch('/api/upload',{
+      method:'POST',
+      headers:state.token?{'Authorization':`Bearer ${state.token}`}:{},
+      credentials:'include', body:fd
+    });
+    const data = await res.json();
+    if (!res.ok) { toast(data.error||'Upload failed','error'); btn.disabled=false; btn.textContent='⬆ Upload & Index'; return; }
+    if (data.rejected?.length) data.rejected.forEach(r=>{ const i=uploadQueue.find(q=>q.file.name===r.file); if(i){i.status='err';} });
+    btn.textContent='⏳ Processing…'; pb.style.width='15%';
+    pl.textContent=`Server processing ${data.queued} photo${data.queued!==1?'s':''} — this may take a moment…`;
+    startUploadPoll();
+  } catch(e) { toast('Network error','error'); btn.disabled=false; btn.textContent='⬆ Upload & Index'; }
+}
+
+function startUploadPoll() {
+  if (uploadPollInterval) return;
+  uploadPollInterval = setInterval(async()=>{
+    try {
+      const job = await api('GET','/api/upload/status');
+      const pb = document.getElementById('upload-progress-bar');
+      const pl = document.getElementById('upload-progress-label');
+      if (pb) { const pct = job.total>0?Math.round(15+(job.processed/job.total)*80):15; pb.style.width=pct+'%'; }
+      if (pl) pl.textContent = `Processing ${job.processed}/${job.total} — ${job.done_count} indexed, ${job.error_count} skipped`;
+      if (job.status==='done') {
+        clearInterval(uploadPollInterval); uploadPollInterval=null;
+        if (pb) pb.style.width='100%';
+        job.results.forEach(r=>{const i=uploadQueue.find(q=>q.file.name===r.filename);if(i)i.status='ok';});
+        job.errors.forEach(e=>{const i=uploadQueue.find(q=>q.file.name===e.file);if(i)i.status='err';});
+        renderUploadQueue();
+        if (pl) pl.textContent=`✓ Done — ${job.done_count} indexed${job.error_count>0?', '+job.error_count+' skipped':''}`;
+        if (job.done_count>0) { toast(`✓ ${job.done_count} photo${job.done_count!==1?'s':''} indexed!`,'success'); loadPhotos(); loadStats(); }
+        if (job.error_count>0) toast(`${job.error_count} file${job.error_count!==1?'s':''} skipped`,'info');
+        const btn = document.getElementById('upload-btn');
+        if (btn) { btn.disabled=false; btn.textContent='⬆ Upload & Index'; }
+      }
+    } catch(e) {}
+  }, 700);
+}
+
+const zone = document.getElementById('upload-zone');
+if (zone) {
+  zone.addEventListener('dragover',e=>{e.preventDefault();zone.classList.add('drag-over')});
+  zone.addEventListener('dragleave',()=>zone.classList.remove('drag-over'));
+  zone.addEventListener('drop',e=>{e.preventDefault();zone.classList.remove('drag-over');handleFileSelect(e.dataTransfer.files)});
+}
+
+document.addEventListener('keydown',e=>{
+  if (e.key==='Escape'){hideLoginModal();closeLightbox();}
+  if ((e.metaKey||e.ctrlKey)&&e.key==='k'){e.preventDefault();
+    const inp = state.currentPage==='dashboard'?document.getElementById('main-search-input'):document.getElementById('nav-search-input');
+    inp?.focus();}
+});
+
+checkAuth();
+</script>
+</body>
+</html>
